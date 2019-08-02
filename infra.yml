@@ -1,0 +1,349 @@
+Parameters:
+    EnvironmentName:
+        Description: An Environment name that will be prefixed to resources
+        Type: String
+
+    VpcCIDR:
+        Description: Please enter the IP range (CIDR notation) for this
+        Type: String
+        Default: 10.0.0.0/16
+
+    udagramPublicSubnet1CIDR:
+        Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+        Type: String
+        Default: 10.0.0.0/24
+
+    udagramPublicSubnet2CIDR:
+        Description: Please enter the IP range (CIDR notation) for the public subnet in the second Availability Zone
+        Type: String
+        Default: 10.0.1.0/24
+
+    udagramPrivateSubnet1CIDR:
+        Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+        Type: String
+        Default: 10.0.2.0/24
+
+    udagramPrivateSubnet2CIDR:
+        Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
+        Type: String
+        Default: 10.0.3.0/24
+
+Resources:
+  udagramVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  udagramInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  udagramAttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref udagramVPC
+      InternetGatewayId: !Ref udagramInternetGateway
+
+  udagramPublicSubnet1: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref udagramVPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref udagramPublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags: 
+        - Key: Name 
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ1)
+
+  udagramPublicSubnet2: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref udagramVPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref udagramPublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags: 
+        - Key: Name 
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ2)
+
+  udagramPrivateSubnet1: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref udagramVPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref udagramPrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name 
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ1)
+
+  udagramPrivateSubnet2: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref udagramVPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref udagramPrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name 
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ2)
+
+  udagramNatGateway1EIP:
+      Type: AWS::EC2::EIP
+      DependsOn: udagramAttachGateway
+      Properties: 
+          Domain: vpc
+
+  udagramNatGateway2EIP:
+      Type: AWS::EC2::EIP
+      DependsOn: udagramAttachGateway
+      Properties:
+          Domain: vpc
+
+  udagramNatGateway1: 
+      Type: AWS::EC2::NatGateway
+      Properties: 
+          AllocationId: !GetAtt udagramNatGateway1EIP.AllocationId
+          SubnetId: !Ref udagramPublicSubnet1
+
+  udagramNatGateway2: 
+      Type: AWS::EC2::NatGateway
+      Properties:
+          AllocationId: !GetAtt udagramNatGateway2EIP.AllocationId
+          SubnetId: !Ref udagramPublicSubnet2
+
+  udagramPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref udagramVPC
+      Tags: 
+        - Key: Name 
+          Value: !Sub ${EnvironmentName} Public Routes
+
+  udagramDefaultPublicRoute: 
+      Type: AWS::EC2::Route
+      DependsOn: udagramAttachGateway
+      Properties: 
+          RouteTableId: !Ref udagramPublicRouteTable
+          DestinationCidrBlock: 0.0.0.0/0
+          GatewayId: !Ref udagramInternetGateway
+
+  udagramPublicSubnet1RouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+          RouteTableId: !Ref udagramPublicRouteTable
+          SubnetId: !Ref udagramPublicSubnet1
+
+  udagramPublicSubnet2RouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+          RouteTableId: !Ref udagramPublicRouteTable
+          SubnetId: !Ref udagramPublicSubnet2
+  
+  udagramPrivateRouteTable1:
+      Type: AWS::EC2::RouteTable
+      Properties: 
+          VpcId: !Ref udagramVPC
+          Tags: 
+              - Key: Name 
+                Value: !Sub ${EnvironmentName} Private Routes (AZ1)
+
+  udagramDefaultPrivateRoute1:
+      Type: AWS::EC2::Route
+      Properties:
+          RouteTableId: !Ref udagramPrivateRouteTable1
+          DestinationCidrBlock: 0.0.0.0/0
+          NatGatewayId: !Ref udagramNatGateway1
+
+  udagramPrivateSubnet1RouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+          RouteTableId: !Ref udagramPrivateRouteTable1
+          SubnetId: !Ref udagramPrivateSubnet1
+
+  udagramPrivateRouteTable2:
+      Type: AWS::EC2::RouteTable
+      Properties: 
+          VpcId: !Ref udagramVPC
+          Tags: 
+              - Key: Name 
+                Value: !Sub ${EnvironmentName} Private Routes (AZ2)
+
+  udagramDefaultPrivateRoute2:
+      Type: AWS::EC2::Route
+      Properties:
+          RouteTableId: !Ref udagramPrivateRouteTable2
+          DestinationCidrBlock: 0.0.0.0/0
+          NatGatewayId: !Ref udagramNatGateway2
+
+  udagramPrivateSubnet2RouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+          RouteTableId: !Ref udagramPrivateRouteTable2
+          SubnetId: !Ref udagramPrivateSubnet2
+
+  udagramS3Role: 
+    Type: "AWS::IAM::Role"
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "ec2.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+
+  udagramS3ROPolicy:
+    Type: AWS::IAM::Policy 
+    Properties:
+      PolicyName: "udagramS3ROPolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Action: 
+            - "s3:Get*"
+            - "s3:List*"
+            Resource: "*"
+      Roles:
+        -
+          Ref: "udagramS3Role"
+  
+  udagramProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      Path: "/"
+      Roles:
+        - !Ref udagramS3Role
+
+  udagramSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Autoscaling security group for udagram"
+      SecurityGroupEgress:
+        - 
+            CidrIp: "0.0.0.0/0"
+            Description: "Allow all traffic out for udagram"
+            FromPort: -1
+            IpProtocol: "-1"
+            ToPort: -1  
+      SecurityGroupIngress:
+        - 
+          CidrIp: "0.0.0.0/0"
+          Description: "Allow web server traffic for udagram"
+          FromPort: 80
+          IpProtocol: "tcp"
+          ToPort: 80
+        - 
+          CidrIp: "0.0.0.0/0"
+          Description: "Allow SSH traffic for udagram"
+          FromPort: 22
+          IpProtocol: "tcp"
+          ToPort: 22
+      VpcId: !Ref udagramVPC
+
+  udagramLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties: 
+      AssociatePublicIpAddress: false
+      BlockDeviceMappings: 
+        - 
+            DeviceName: "/dev/sda1" 
+            Ebs:
+              VolumeSize: 10
+      IamInstanceProfile: !Ref udagramProfile
+      ImageId: "ami-06f2f779464715dc5"
+      InstanceType: "t3.medium"
+      LaunchConfigurationName: "udagramLaunchConfiguration"
+      SecurityGroups: 
+        - !Ref udagramSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          apt-get update -y
+          apt-get install unzip awscli -y
+          apt-get install apache2 -y
+          systemctl start apache2.service
+          cd /var/www/html
+          aws s3 cp s3://udacity-demo-1/udacity.zip .
+          unzip -o udacity.zip
+
+  udagramLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: "ipv4"
+      Name: "udagramLoadBalancer"
+      Scheme: "internet-facing"
+      SecurityGroups:
+        - !Ref udagramSecurityGroup
+      Subnets:
+        - !Ref udagramPublicSubnet1
+        - !Ref udagramPublicSubnet2
+
+  udagramLBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckPort: "80"
+      HealthCheckIntervalSeconds: "30"
+      HealthCheckPath: "/index.html"
+      HealthCheckProtocol: "HTTP"
+      HealthCheckTimeoutSeconds: "5"
+      HealthyThresholdCount: "5"
+      UnhealthyThresholdCount: "2"
+      Matcher:
+        HttpCode: "200"
+      Name: "udagramLBTargetGroup"
+      Port: 80
+      Protocol: "HTTP"
+      TargetType: "instance"
+      VpcId: !Ref udagramVPC
+    
+  udagramLBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties: 
+      DefaultActions: 
+        - Action
+      LoadBalancerArn: !Ref udagramLoadBalancer
+      Port: 80
+      Protocol: "HTTP"
+      DefaultActions:
+        - 
+          Type: "forward"
+          TargetGroupArn: !Ref udagramLBTargetGroup
+
+  udagramAutoScaleGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: "udagramAutoScaleGroup"
+      AvailabilityZones:
+        - Fn::GetAtt: [ udagramPrivateSubnet1, AvailabilityZone ]
+        - Fn::GetAtt: [ udagramPrivateSubnet2, AvailabilityZone ]
+      MinSize: "4"
+      MaxSize: "4"
+      LaunchConfigurationName: "udagramLaunchConfiguration"
+      VPCZoneIdentifier:
+        - !Ref udagramPrivateSubnet1
+        - !Ref udagramPrivateSubnet2
+      TargetGroupARNs:
+        - !Ref udagramLBTargetGroup
+
+Outputs:
+
+  LoadBalancerURL:
+    Description: "Load Balancer URL"
+    Value: !Sub "http://${udagramLoadBalancer.DNSName}"
+
+
